@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem Kontrol HP Web v2</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f0f2f5;
+            color: #333;
+        }
+        .card {
+            background: white;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h2 {
+            margin-top: 0;
+            color: #007bff;
+        }
+        video {
+            width: 100%;
+            max-width: 400px;
+            border-radius: 8px;
+            background: #000;
+            transform: scaleX(1); /* Default normal */
+        }
+        /* Efek cermin khusus untuk kamera depan agar natural */
+        .mirror {
+            transform: scaleX(-1);
+        }
+        .btn-group {
+            margin-top: 10px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            font-size: 16px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button.secondary {
+            background-color: #6c757d;
+        }
+        button.secondary:hover {
+            background-color: #5a6268;
+        }
+        .info-item {
+            margin: 8px 0;
+            font-size: 16px;
+        }
+        .status {
+            font-weight: bold;
+            color: #28a745;
+        }
+        h1 {
+          border: 5px solid#e30000;
+          background: linear-gradient(#000000, #a40000);
+          border-radius: 15px;
+          color: #ffffff;
+          text-align: center;
+          margin-right: 200px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>CPU-R</h1>
+
+    <!-- SEKSI CPU -->
+    <div class="card">
+        <h2>your spesification CPU</h2>
+        <div class="info-item">Jumlah CPU Cores (Logical): <span id="cpu-cores" class="status">Memuat...</span></div>
+        <div class="info-item">User Agent (Info Browser/OS): <br><small id="user-agent"></small></div>
+    </div>
+
+    <!-- SEKSI KAMERA & FLASH -->
+    <div class="card">
+        <h2>Kamera & Flash</h2>
+        <video id="video" autoplay playsinline></video>
+        
+        <div class="btn-group">
+            <button id="btn-kamera-belakang">cek Kamera Belakang</button>
+            <button id="btn-kamera-depan" class="secondary">cek Kamera Depan</button>
+            <button id="btn-flash" style="display:none; background-color: #ffc107; color: #000;">Nyalakan Flash</button>
+        </div>
+        
+        <div id="error-msg" style="color:red; margin-top:10px;"></div>
+    </div>
+
+    <script>
+        // 1. MENDAPATKAN DATA CPU & CORES
+        if (navigator.hardwareConcurrency) {
+            document.getElementById('cpu-cores').textContent = navigator.hardwareConcurrency + " Cores";
+        } else {
+            document.getElementById('cpu-cores').textContent = "Tidak didukung oleh browser ini";
+        }
+        document.getElementById('user-agent').textContent = navigator.userAgent;
+
+
+        // 2. KONTROL KAMERA DAN FLASH
+        const video = document.getElementById('video');
+        const btnBelakang = document.getElementById('btn-kamera-belakang');
+        const btnDepan = document.getElementById('btn-kamera-depan');
+        const btnFlash = document.getElementById('btn-flash');
+        const errorMsg = document.getElementById('error-msg');
+        
+        let currentStream = null;
+        let videoTrack = null;
+        let flashStatus = false;
+
+        // Fungsi utama untuk menyalakan kamera berdasarkan mode (depan/belakang)
+        async function mulaiKamera(facingMode) {
+            try {
+                errorMsg.textContent = ""; // Reset pesan error
+                btnFlash.style.display = "none"; // Sembunyikan flash dulu saat ganti kamera
+                flashStatus = false;
+                btnFlash.textContent = "Nyalakan Flash";
+
+                // Hentikan kamera yang sedang berjalan sebelum membuka yang baru
+                if (currentStream) {
+                    currentStream.getTracks().forEach(track => track.stop());
+                }
+
+                // Konfigurasi kamera
+                const constraints = {
+                    video: {
+                        facingMode: { ideal: facingMode }
+                    }
+                };
+
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = stream;
+                currentStream = stream;
+                videoTrack = stream.getVideoTracks()[0];
+
+                // Efek cermin (mirror) jika menggunakan kamera depan supaya gerakan tangan pas
+                if (facingMode === "user") {
+                    video.classList.add('mirror');
+                } else {
+                    video.classList.remove('mirror');
+                }
+
+                // Cek fitur flash (Hanya kamera belakang yang biasanya mendukung 'torch')
+                // Menunggu sejenak agar track benar-benar siap membaca kemampuan hardware
+                setTimeout(() => {
+                    if (videoTrack && typeof videoTrack.getCapabilities === 'function') {
+                        const capabilities = videoTrack.getCapabilities();
+                        if (capabilities.torch) {
+                            btnFlash.style.display = "inline-block";
+                        } else if (facingMode === "environment") {
+                            errorMsg.textContent = "Kamera belakang aktif, tetapi flash tidak didukung browser ini.";
+                        }
+                    }
+                }, 500);
+
+            } catch (err) {
+                console.error("Gagal membuka kamera: ", err);
+                errorMsg.textContent = "Gagal mengakses kamera. Pastikan izin diberikan dan menggunakan protokol HTTPS.";
+            }
+        }
+
+        // Event Listener Tombol
+        btnBelakang.addEventListener('click', () => mulaiKamera("environment"));
+        btnDepan.addEventListener('click', () => mulaiKamera("user"));
+
+        // Kontrol On/Off Senter (Flash)
+        btnFlash.addEventListener('click', async () => {
+            if (!videoTrack) return;
+
+            try {
+                flashStatus = !flashStatus;
+                await videoTrack.applyConstraints({
+                    advanced: [{ torch: flashStatus }]
+                });
+                
+                btnFlash.textContent = flashStatus ? "Matikan Flash" : "Nyalakan Flash";
+            } catch (err) {
+                console.error("Gagal mengontrol flash: ", err);
+                errorMsg.textContent = "Gagal mengubah status flash.";
+            }
+        });
+    </script>
+</body>
+</html>
